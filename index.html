@@ -1,152 +1,208 @@
 <!DOCTYPE html>
 <html lang="bn">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pro Camera</title>
-<style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pro Camera App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-        margin: 0;
-        padding: 0;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        background-color: #000;
-        color: #fff;
-        font-family: sans-serif;
+      background-color: #000;
+      color: #fff;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
     }
     #viewport {
-        width: 100%;
-        height: 70%;
-        position: relative;
-        overflow: hidden;
+      position: relative;
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #111;
     }
-    #video {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
-    #canvas {
-        display: none;
+    .top-bar {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      right: 15px;
+      display: flex;
+      justify-content: space-between;
+      z-index: 10;
     }
-    #gallery {
-        position: absolute;
-        bottom: 20px;
-        left: 20px;
-        width: 60px;
-        height: 60px;
-        border: 2px solid #fff;
-        border-radius: 10px;
-        display: none;
+    .btn-icon {
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .grading-panel {
+      position: absolute;
+      bottom: 110px;
+      left: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 12px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 10;
+    }
+    .control-group {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+    .control-group input { flex: 1; margin-left: 10px; }
+    .bottom-bar {
+      height: 100px;
+      background: #000;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      position: relative;
+      z-index: 10;
     }
     #capture-btn {
-        position: absolute;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 70px;
-        height: 70px;
-        background-color: #fff;
-        border-radius: 50%;
-        border: 4px solid #444;
-        cursor: pointer;
+      width: 65px;
+      height: 65px;
+      border-radius: 50%;
+      border: 4px solid #fff;
+      background: transparent;
+      position: relative;
+      cursor: pointer;
     }
-    #capture-btn:active {
-        transform: translateX(-50%) scale(0.9);
+    #capture-btn::after {
+      content: '';
+      position: absolute;
+      top: 4px; left: 4px; right: 4px; bottom: 4px;
+      background: #fff;
+      border-radius: 50%;
     }
-    .controls {
-        height: 30%;
-        width: 100%;
-        background-color: #111;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        padding-bottom: 20px;
+    #gallery-thumb {
+      width: 45px;
+      height: 45px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      object-fit: cover;
+      background: #222;
     }
-    .sliders {
-        width: 80%;
-        display: flex;
-        justify-content: space-around;
-        margin-bottom: 10px;
-    }
-    .slider-group {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-    }
-    .slider-group label {
-        font-size: 12px;
-        margin-bottom: 5px;
-    }
-</style>
+    canvas { display: none; }
+  </style>
 </head>
 <body>
-    <div id="viewport">
-        <video id="video" autoplay playsinline></video>
-        <img id="gallery" alt="Captured">
-        <canvas id="canvas"></canvas>
-    </div>
-    <div class="controls">
-        <div class="sliders">
-            <div class="slider-group">
-                <label for="brightness">উজ্জ্বলতা</label>
-                <input type="range" id="brightness" min="50" max="150" value="100">
-            </div>
-            <div class="slider-group">
-                <label for="contrast">কন্ট্রাস্ট</label>
-                <input type="range" id="contrast" min="50" max="150" value="100">
-            </div>
-            <div class="slider-group">
-                <label for="saturation">স্যাচুরেশন</label>
-                <input type="range" id="saturation" min="0" max="200" value="100">
-            </div>
-        </div>
-        <button id="capture-btn"></button>
+
+  <div id="viewport">
+    <div class="top-bar">
+      <button class="btn-icon" id="switch-btn">🔄 Switch Cam</button>
     </div>
 
-<script>
+    <video id="video" autoplay playsinline></video>
+
+    <!-- Color Grading Controls (LMC Style) -->
+    <div class="grading-panel">
+      <div class="control-group">
+        <label>Brightness</label>
+        <input type="range" id="brightness" min="50" max="150" value="100">
+      </div>
+      <div class="control-group">
+        <label>Contrast</label>
+        <input type="range" id="contrast" min="50" max="150" value="100">
+      </div>
+      <div class="control-group">
+        <label>Saturation</label>
+        <input type="range" id="saturation" min="0" max="200" value="100">
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <img id="gallery-thumb" alt="Preview">
+    <button id="capture-btn"></button>
+    <div style="width: 45px;"></div>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const captureBtn = document.getElementById('capture-btn');
-    const gallery = document.getElementById('gallery');
-    const sliders = document.querySelectorAll('input[type="range"]');
+    const switchBtn = document.getElementById('switch-btn');
+    const galleryThumb = document.getElementById('gallery-thumb');
+
+    const brightnessInput = document.getElementById('brightness');
+    const contrastInput = document.getElementById('contrast');
+    const saturationInput = document.getElementById('saturation');
+
+    let currentStream = null;
+    let useFrontCamera = false;
+
+    function applyFilter() {
+      const filterStr = `brightness(${brightnessInput.value}%) contrast(${contrastInput.value}%) saturate(${saturationInput.value}%)`;
+      video.style.filter = filterStr;
+    }
+
+    [brightnessInput, contrastInput, saturationInput].forEach(input => {
+      input.addEventListener('input', applyFilter);
+    });
 
     async function startCamera() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "user" },
-                audio: false
-            });
-            video.srcObject = stream;
-        } catch (error) {
-            console.error(error);
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+
+      const constraints = {
+        video: {
+          facingMode: useFrontCamera ? "user" : { exact: "environment" }
         }
+      };
+
+      try {
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+      } catch (err) {
+        // Fallback for devices without strict environment constraint
+        try {
+          currentStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: useFrontCamera ? "user" : "environment" }
+          });
+          video.srcObject = currentStream;
+        } catch (e) {
+          alert("ক্যামেরা এক্সেস করা সম্ভব হচ্ছে না: " + e.message);
+        }
+      }
     }
 
-    function applyFilters() {
-        const b = document.getElementById('brightness').value;
-        const c = document.getElementById('contrast').value;
-        const s = document.getElementById('saturation').value;
-        video.style.filter = `brightness(${b}%) contrast(${c}%) saturate(${s}%)`;
-    }
-
-    sliders.forEach(slider => slider.addEventListener('input', applyFilters));
+    switchBtn.addEventListener('click', () => {
+      useFrontCamera = !useFrontCamera;
+      startCamera();
+    });
 
     captureBtn.addEventListener('click', () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.filter = video.style.filter;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        gallery.src = canvas.toDataURL('image/png');
-        gallery.style.display = 'block';
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+
+      ctx.filter = video.style.filter || "none";
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const dataUrl = canvas.toDataURL('image/png');
+      galleryThumb.src = dataUrl;
     });
 
     startCamera();
-</script>
+  </script>
 </body>
 </html>
-
