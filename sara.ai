@@ -1,0 +1,363 @@
+# sara.py
+# সম্পূর্ণ একীভূত Bengali Voice Assistant
+
+import os
+import json
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+import speech_recognition as sr
+from gtts import gTTS
+import pygame
+import google.generativeai as genai
+import webbrowser
+import subprocess
+from datetime import datetime
+
+# ===========================
+# কনফিগারেশন
+# ===========================
+
+load_dotenv()
+
+class SaraConfig:
+    GEMINI_API_KEY = os.getenv("AQ.Ab8RN6JE0eNniXa5JG7NIbk5W9or-TKpj62-WkKXVGGUFgarPQ", "")
+    LANGUAGE_INPUT = "bn-IN"
+    LANGUAGE_OUTPUT = "bn"
+    TIMEOUT_LISTEN = 10
+    TIMEOUT_SILENCE = 2.0
+    MAX_HISTORY = 5
+    TEMP_AUDIO_DIR = Path("temp_audio")
+    CONTACTS_FILE = Path("sara_contacts.json")
+
+# ===========================
+# স্পিচ রিকগনিশন
+# ===========================
+
+class VoiceRecognizer:
+    def __init__(self):
+        self.recognizer = sr.Recognizer()
+        self.microphone = sr.Microphone()
+        self.recognizer.energy_threshold = 4000
+    
+    def listen(self):
+        """মাইক্রোফোন থেকে অডিও ক্যাপচার করুন"""
+        try:
+            with self.microphone as source:
+                print("🎤 শোনছি... (বলুন আপনার কথা)")
+                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                audio = self.recognizer.listen(
+                    source,
+                    timeout=SaraConfig.TIMEOUT_LISTEN,
+                    phrase_time_limit=15
+                )
+            
+            print("⏳ প্রক্রিয়া করছি...")
+            text = self.recognizer.recognize_google(
+                audio,
+                language=SaraConfig.LANGUAGE_INPUT
+            )
+            return text.strip()
+        
+        except sr.UnknownValueError:
+            return None
+        except sr.RequestError as e:
+            print(f"❌ Google Speech API সমস্যা: {e}")
+            return None
+        except sr.Timeout:
+            return None
+
+# ===========================
+# AI ইঞ্জিন
+# ===========================
+
+class GeminiEngine:
+    def __init__(self):
+        if not SaraConfig.GEMINI_API_KEY:
+            raise ValueError(
+                "❌ GEMINI_API_KEY সেট করুন .env ফাইলে"
+            )
+        
+        genai.configure(api_key=SaraConfig.GEMINI_API_KEY)
+        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.system_prompt = self._get_system_prompt()
+    
+    def _get_system_prompt(self):
+        return """আপনার নাম Sara। আপনি একজন বন্ধুত্বপূর্ণ, সাহায্যকারী ডিজিটাল সহায়ক।
+
+**নিয়ম:**
+1. সবসময় বাংলায় উত্তর দিন
+2. ছোট, স্পষ্ট, বোঝার মতো উত্তর দিন (২-৩ বাক্য)
+3. সহজ, প্রাকৃতিক বাংলা ব্যবহার করুন
+4. বন্ধুর মতো আচরণ করুন - গরম্ভীর নন
+
+**ডিভাইস কন্ট্রোল:**
+যদি ব্যবহারকারী নিম্নলিখিত চায়:
+- YouTube খোঁজা: উত্তরে [YOUTUBE:search_query] লিখুন
+- অ্যাপ খোলা: উত্তরে [OPEN_APP:app_name] লিখুন
+- বার্তা পাঠানো: উত্তরে [SEND_MESSAGE:contact_name] লিখুন
+- সময় বলা: উত্তরে বর্তমান সময় বলুন
+
+**উদাহরণ:**
+ব্যবহারকারী: "ইউটিউবে গান খোঁজ দে"
+Sara: "তোমার পছন্দের গান খুঁজছি। [YOUTUBE:bangla music]"
+
+ব্যবহারকারী: "ক্যালকুলেটর খোল"
+Sara: "ঠিক আছে, খুলছি। [OPEN_APP:calculator]"
+"""
+    
+    def get_response(self, user_input, history=None):
+        """AI থেকে উত্তর পান"""
+        try:
+            messages = self.system_prompt + "\n\n"
+            
+            if history:
+                for i, exchange in enumerate(history[-SaraConfig.MAX_HISTORY:]):
+                    messages += f"ব্যবহারকারী: {exchange['user']}\n"
+                    messages += f"Sara: {exchange['sara']}\n\n"
+            
+            messages += f"ব্যবহারকারী: {user_input}\nSara:"
+            
+            response = self.model.generate_content(messages)
+            result = response.text.strip()
+            return result
+        
+        except Exception as e:
+            return f"মাফ করবেন, একটু সমস্যা হয়েছে। {str(e)[:50]}"
+
+# ===========================
+# টেক্সট টু স্পিচ
+# ===========================
+
+class TextToSpeech:
+    def __init__(self):
+        SaraConfig.TEMP_AUDIO_DIR.mkdir(exist_ok=True)
+        pygame.mixer.init()
+    
+    def speak(self, text):
+        """টেক্সট কে কথায় রূপান্তর করুন এবং বলুন"""
+        try:
+            tts = gTTS(
+                text=text,
+                lang=SaraConfig.LANGUAGE_OUTPUT,
+                slow=False
+            )
+            audio_file = SaraConfig.TEMP_AUDIO_DIR / "sara.mp3"
+            tts.save(str(audio_file))
+            
+            pygame.mixer.music.load(str(audio_file))
+            pygame.mixer.music.play()
+            
+            while pygame.mixer.music.get_busy():
+                pygame.time.Clock().tick(10)
+            
+            try:
+                os.remove(str(audio_file))
+            except:
+                pass
+        
+        except Exception as e:
+            print(f"❌ কথা বলতে সমস্যা: {e}")
+
+# ===========================
+# ডিভাইস কন্ট্রোল
+# ===========================
+
+class DeviceController:
+    def __init__(self):
+        self.contacts = self._load_contacts()
+    
+    def _load_contacts(self):
+        """যোগাযোগের তালিকা লোড করুন"""
+        if SaraConfig.CONTACTS_FILE.exists():
+            with open(SaraConfig.CONTACTS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        
+        default = {
+            "রহিম": "01700000001",
+            "ফাতেমা": "01800000002",
+            "করিম": "01900000003"
+        }
+        self._save_contacts(default)
+        return default
+    
+    def _save_contacts(self, contacts):
+        """যোগাযোগ সংরক্ষণ করুন"""
+        with open(SaraConfig.CONTACTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(contacts, f, ensure_ascii=False, indent=2)
+    
+    def execute_command(self, response_text):
+        """প্রতিক্রিয়া থেকে কমান্ড বের করুন এবং চালান"""
+        if "[YOUTUBE:" in response_text:
+            start = response_text.find("[YOUTUBE:") + 9
+            end = response_text.find("]", start)
+            query = response_text[start:end]
+            self._youtube_search(query)
+        
+        elif "[OPEN_APP:" in response_text:
+            start = response_text.find("[OPEN_APP:") + 10
+            end = response_text.find("]", start)
+            app = response_text[start:end]
+            self._open_app(app)
+        
+        elif "[SEND_MESSAGE:" in response_text:
+            start = response_text.find("[SEND_MESSAGE:") + 14
+            end = response_text.find("]", start)
+            contact = response_text[start:end]
+            self._send_message(contact)
+    
+    def _youtube_search(self, query):
+        """YouTube এ খোঁজ করুন"""
+        try:
+            url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
+            webbrowser.open(url)
+            print(f"✅ YouTube এ '{query}' খোঁজা হচ্ছে...")
+        except Exception as e:
+            print(f"❌ YouTube সমস্যা: {e}")
+    
+    def _open_app(self, app_name):
+        """অ্যাপ্লিকেশন খুলুন"""
+        app_map = {
+            "ক্যালকুলেটর": "gnome-calculator",
+            "ফাইল": "nautilus",
+            "টেক্সট": "gedit",
+            "ক্রোম": "google-chrome",
+            "ফায়ারফক্স": "firefox",
+            "ভিএলসি": "vlc"
+        }
+        
+        try:
+            command = app_map.get(app_name.lower(), app_name.lower())
+            subprocess.Popen([command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"✅ {app_name} খোলা হয়েছে")
+        except Exception as e:
+            print(f"❌ অ্যাপ খুলতে সমস্যা: {e}")
+    
+    def _send_message(self, contact_name):
+        """বার্তা পাঠান (সিমুলেশন)"""
+        contact = self.contacts.get(contact_name, contact_name)
+        print(f"✅ {contact_name} কে বার্তা পাঠানো হয়েছে")
+
+# ===========================
+# প্রধান সহায়ক
+# ===========================
+
+class Sara:
+    def __init__(self):
+        print("\n" + "="*50)
+        print("🤖 Sara - বাংলা ভয়েস সহায়ক")
+        print("="*50 + "\n")
+        
+        try:
+            self.recognizer = VoiceRecognizer()
+            self.engine = GeminiEngine()
+            self.speaker = TextToSpeech()
+            self.device = DeviceController()
+            self.history = []
+            self.running = True
+        except Exception as e:
+            print(f"❌ স্টার্টআপ সমস্যা: {e}")
+            sys.exit(1)
+    
+    def _clean_response(self, text):
+        """প্রতিক্রিয়া থেকে কমান্ড সরিয়ে ফেলুন"""
+        text = text.replace("[YOUTUBE:", "").replace("]", "")
+        text = text.replace("[OPEN_APP:", "").replace("]", "")
+        text = text.replace("[SEND_MESSAGE:", "").replace("]", "")
+        return text.strip()
+    
+    def _add_to_history(self, user_text, sara_text):
+        """কথোপকথনের ইতিহাস রাখুন"""
+        self.history.append({
+            "user": user_text,
+            "sara": sara_text,
+            "time": datetime.now().isoformat()
+        })
+    
+    def greet(self):
+        """স্বাগত বার্তা"""
+        greeting = "আস্সালামু আলাইকুম! আমি Sara, তোমার ডিজিটাল বন্ধু। আমি তোমার কথা শুনি, বুঝি এবং সাহায্য করি। বলো, আজ কী করতে চাও?"
+        print(f"\n👋 Sara: {greeting}\n")
+        self.speaker.speak(greeting)
+    
+    def listen_user(self):
+        """ব্যবহারকারীর কথা শুনুন"""
+        try:
+            text = self.recognizer.listen()
+            if text:
+                print(f"👤 তুমি: {text}\n")
+                return text
+            else:
+                print("🤐 কিছু শুনতে পেলাম না। আবার চেষ্টা করো।\n")
+                return None
+        except KeyboardInterrupt:
+            return "থামো"
+    
+    def process_input(self, user_input):
+        """ব্যবহারকারীর ইনপুট প্রক্রিয়া করুন"""
+        if user_input.lower() in ["থামো", "বন্ধ করো", "আর না", "exit", "quit"]:
+            return "STOP"
+        
+        response = self.engine.get_response(user_input, self.history)
+        self._add_to_history(user_input, response)
+        return response
+    
+    def respond(self, sara_response):
+        """Sara এর উত্তর দিন"""
+        clean_response = self._clean_response(sara_response)
+        print(f"🤖 Sara: {clean_response}\n")
+        self.speaker.speak(clean_response)
+        self.device.execute_command(sara_response)
+    
+    def save_history(self):
+        """কথোপকথনের ইতিহাস সংরক্ষণ করুন"""
+        try:
+            history_file = Path("sara_history.json")
+            with open(history_file, "w", encoding="utf-8") as f:
+                json.dump(self.history, f, ensure_ascii=False, indent=2)
+            print(f"💾 কথোপকথন সংরক্ষিত: {history_file}")
+        except Exception as e:
+            print(f"⚠️ ইতিহাস সংরক্ষণে সমস্যা: {e}")
+    
+    def run(self):
+        """প্রধান লুপ"""
+        self.greet()
+        
+        while self.running:
+            try:
+                user_input = self.listen_user()
+                
+                if not user_input:
+                    continue
+                
+                response = self.process_input(user_input)
+                
+                if response == "STOP":
+                    farewell = "বিদায়! আবার কথা হবে। যত্ন নিবেন। আল্লাহ হাফেজ!"
+                    print(f"👋 Sara: {farewell}\n")
+                    self.speaker.speak(farewell)
+                    self.running = False
+                    break
+                
+                self.respond(response)
+            
+            except KeyboardInterrupt:
+                farewell = "বন্ধ করছি। বাই!"
+                print(f"\n👋 Sara: {farewell}")
+                self.speaker.speak(farewell)
+                self.running = False
+                break
+            
+            except Exception as e:
+                print(f"❌ সমস্যা: {e}\n")
+        
+        self.save_history()
+        print("\n✅ Sara বন্ধ হয়েছে। ধন্যবাদ!\n")
+
+# ===========================
+# এক্সিকিউশন
+# ===========================
+
+if __name__ == "__main__":
+    sara = Sara()
+    sara.run()
